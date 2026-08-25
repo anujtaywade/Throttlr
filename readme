@@ -111,7 +111,7 @@ brew services start redis
 ## Development
 
 ```bash
-git clone https://github.com/<your-username>/throttlr.git
+git clone https://github.com/anujtaywade/throttlr.git
 cd throttlr
 npm install
 npm test
