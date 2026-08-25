@@ -1,0 +1,165 @@
+# throttlr
+
+A Redis-backed rate limiting middleware for Express, with pluggable algorithms — fixed window, sliding window, and token bucket — chosen via config, not hardcoded.
+
+Built as a standalone, npm-installable package rather than app-specific code, so it can drop into any Express project.
+
+---
+
+## Why
+
+Most rate limiter tutorials hardcode one algorithm and call it done. `throttlr` implements all three of the common approaches so you can pick the right tradeoff for your use case, and exposes a consistent middleware API regardless of which one you choose.
+
+| Algorithm | Good for | Tradeoff |
+|---|---|---|
+| **Fixed window** | Simple APIs, low overhead | Allows bursts at window boundaries |
+| **Sliding window** | Smooth, accurate limiting | Slightly more Redis memory (stores timestamps) |
+| **Token bucket** | Allowing short bursts while enforcing an average rate | Slightly more complex refill logic |
+
+---
+
+## Installation
+
+```bash
+npm install throttlr
+```
+
+Requires a running Redis instance (v5+). See [Local Redis setup](#local-redis-setup) below if you don't have one.
+
+---
+
+## Quick start
+
+```js
+const express = require("express");
+const Redis = require("ioredis");
+const { rateLimiter } = require("throttlr");
+
+const app = express();
+const redis = new Redis(); // defaults to localhost:6379
+
+app.use(
+  rateLimiter({
+    redis,
+    algorithm: "sliding-window", // "fixed-window" | "sliding-window" | "token-bucket"
+    windowMs: 60_000,            // 1 minute
+    max: 100,                    // 100 requests per window per key
+  })
+);
+
+app.get("/", (req, res) => res.send("ok"));
+
+app.listen(3000);
+```
+
+By default, requests are throttled by `req.ip`. You can key on anything (user ID, API key, etc.) via `keyGenerator`.
+
+---
+
+## Configuration
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `redis` | `Redis` | — | An `ioredis` client instance (required) |
+| `algorithm` | `string` | `"fixed-window"` | `"fixed-window"`, `"sliding-window"`, or `"token-bucket"` |
+| `windowMs` | `number` | `60000` | Window size in milliseconds (fixed/sliding window) |
+| `max` | `number` | `100` | Max requests allowed per window |
+| `refillRate` | `number` | — | Tokens added per second (token bucket only) |
+| `bucketSize` | `number` | — | Max tokens the bucket can hold (token bucket only) |
+| `keyGenerator` | `(req) => string` | `req => req.ip` | How to identify a client |
+| `onLimitReached` | `(req, res) => void` | sends `429` | Custom handler when a request is blocked |
+
+Every response includes standard rate-limit headers:
+
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 87
+X-RateLimit-Reset: 1735000060
+```
+
+---
+
+## How each algorithm works
+
+**Fixed window** — counts requests in a discrete time bucket (e.g. `12:00:00–12:01:00`) using `INCR` + `EXPIRE`. Cheapest option; can allow up to 2x the limit right at a window boundary.
+
+**Sliding window** — stores a timestamp per request in a Redis sorted set, trims anything older than the window, and counts what's left. Accurate, no boundary bursting, costs a bit more memory.
+
+**Token bucket** — each key has a bucket that refills at a steady rate and drains one token per request, computed atomically in a Lua script. Allows short bursts up to the bucket size while enforcing a long-run average rate.
+
+---
+
+## Local Redis setup
+
+**WSL / Linux:**
+```bash
+sudo apt install redis-server
+sudo service redis-server start
+redis-cli ping   # should return PONG
+```
+
+**Mac:**
+```bash
+brew install redis
+brew services start redis
+```
+
+**No local install:** use a free hosted instance from [Upstash](https://upstash.com) and point `ioredis` at the connection URL it gives you.
+
+---
+
+## Development
+
+```bash
+git clone https://github.com/<your-username>/throttlr.git
+cd throttlr
+npm install
+npm test
+```
+
+Project structure:
+
+```
+throttlr/
+├── packages/
+│   └── middleware/        # the actual npm package
+│       ├── src/
+│       │   ├── algorithms/
+│       │   │   ├── fixedWindow.js
+│       │   │   ├── slidingWindow.js
+│       │   │   └── tokenBucket.js
+│       │   ├── redisClient.js
+│       │   └── index.js
+│       └── test/
+└── demo-app/               # small Express app exercising the middleware
+```
+
+---
+
+## Load testing
+
+Tested with [`autocannon`](https://github.com/mcollina/autocannon) against the demo app's protected route:
+
+```bash
+npx autocannon -c 50 -d 10 http://localhost:3000/protected
+```
+
+_Results: [add your numbers here once you run it — requests/sec, latency, and confirmation that throttling held under load]_
+
+---
+
+## Roadmap
+
+- [ ] Fixed window algorithm
+- [ ] Express middleware wrapper
+- [ ] Sliding window algorithm
+- [ ] Token bucket algorithm (Lua script)
+- [ ] Automated test suite
+- [ ] Load test results
+- [ ] Publish to npm
+
+---
+
+## License
+
+MIT
