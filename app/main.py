@@ -1,5 +1,6 @@
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
+from 
 from app.redis_client import redis_client
 
 app = FastAPI(title="Throttlr")
@@ -25,14 +26,16 @@ async def check_rate_limit(client_id: str):
     # Execute Lua script
     result = await fixed_window_script(
         keys=[key],
-        args=[WINDOW_SECONDS],
+        args=[WINDOW_SECONDS,REQ_LIMIT],
     )
 
     # Get counter and TTL from Lua
-    count, ttl = result
+    allowed, count, ttl = result
+
+    remaining = max(REQ_LIMIT - count, 0)
 
     # Check request limit
-    if count > REQ_LIMIT:
+    if allowed == 0 :
         retry_after = max(ttl, 0)
 
         raise HTTPException(
@@ -41,11 +44,11 @@ async def check_rate_limit(client_id: str):
             headers={"Retry-After": str(retry_after)},
         )
 
-    return {
+    return JSONresponse{
         "client_id": client_id,
         "requests_used": count,
         "allowed": True,
         "limit": REQ_LIMIT,
-        "remaining": REQ_LIMIT - count,
+        "remaining": remaining,
         "window_expire_in_seconds": max(ttl, 0),
     }
