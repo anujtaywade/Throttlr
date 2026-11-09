@@ -1,6 +1,6 @@
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
-from 
+from fastapi.responses import JSONResponse 
 from app.redis_client import redis_client
 
 app = FastAPI(title="Throttlr")
@@ -44,7 +44,8 @@ async def check_rate_limit(client_id: str):
             headers={"Retry-After": str(retry_after)},
         )
 
-    return JSONresponse{
+    return JSONResponse(
+        content={
         "client_id": client_id,
         "requests_used": count,
         "allowed": True,
@@ -52,3 +53,4 @@ async def check_rate_limit(client_id: str):
         "remaining": remaining,
         "window_expire_in_seconds": max(ttl, 0),
     }
+    )
