@@ -2,11 +2,11 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse 
 from app.redis_client import redis_client
+from app.config import settings
 
 app = FastAPI(title="Throttlr")
 
-REQ_LIMIT = 5
-WINDOW_SECONDS = 60 
+
 
 script_path = Path(__file__).parent / "scripts" / "fixed_window.lua"
 script_source = script_path.read_text()
@@ -26,31 +26,41 @@ async def check_rate_limit(client_id: str):
     # Execute Lua script
     result = await fixed_window_script(
         keys=[key],
-        args=[WINDOW_SECONDS,REQ_LIMIT],
+        args=[settings.window_seconds, settings.req_limit],
     )
 
     # Get counter and TTL from Lua
     allowed, count, ttl = result
 
-    remaining = max(REQ_LIMIT - count, 0)
+    remaining = max(settings.req_limit - count, 0)
+    reset_time = max(ttl, 0)
+
+    # Common rate-limit headers
+    rate_limit_headers = {
+        "X-RateLimit-Limit": str(settings.req_limit),
+        "X-RateLimit-Remaining": str(remaining),
+        "X-RateLimit-Reset": str(reset_time),
+    }
 
     # Check request limit
-    if allowed == 0 :
-        retry_after = max(ttl, 0)
-
+    if allowed == 0:
         raise HTTPException(
             status_code=429,
             detail="Too many requests",
-            headers={"Retry-After": str(retry_after)},
+            headers={
+                **rate_limit_headers,
+                "Retry-After": str(reset_time),
+            },
         )
 
     return JSONResponse(
         content={
-        "client_id": client_id,
-        "requests_used": count,
-        "allowed": True,
-        "limit": REQ_LIMIT,
-        "remaining": remaining,
-        "window_expire_in_seconds": max(ttl, 0),
-    }
+            "client_id": client_id,
+            "requests_used": count,
+            "allowed": True,
+            "limit": settings.req_limit,
+            "remaining": remaining,
+            "window_expire_in_seconds": reset_time,
+        },
+        headers=rate_limit_headers,
     )

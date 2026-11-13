@@ -1,6 +1,8 @@
 import redis.asyncio as redis
 
+from app.config import settings
+
 redis_client = redis.from_url(
-    "redis://localhost:6379/0",
-    decode_responses = True,
+    settings.redis_url,
+    decode_responses=True,
 )
