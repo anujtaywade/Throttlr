@@ -3,8 +3,24 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse 
 from app.redis_client import redis_client
 from app.config import settings
+from contextlib import asynccontextmanager
+from redis.exceptions import RedisError
 
-app = FastAPI(title="Throttlr")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Application startup
+    await redis_client.ping()
+    print("Redis connection established")
+
+    try:
+        yield
+    finally:
+        # Application shutdown
+        await redis_client.aclose()
+        print("Redis connection closed")
+
+
+app = FastAPI(title="Throttlr", lifespan=lifespan)
 
 
 
@@ -23,11 +39,17 @@ async def home():
 async def check_rate_limit(client_id: str):
     key = f"throttlr:requests:{client_id}"
 
-    # Execute Lua script
-    result = await fixed_window_script(
-        keys=[key],
-        args=[settings.window_seconds, settings.req_limit],
-    )
+    try:
+        result = await fixed_window_script(
+            keys=[key],
+            args=[settings.window_seconds, settings.req_limit],
+        )
+
+    except RedisError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Rate-limiting service temporarily unavailable",
+        ) from exc
 
     # Get counter and TTL from Lua
     allowed, count, ttl = result
