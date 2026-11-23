@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     req_limit: int = Field(default=5, gt=0)
     window_seconds: int = Field(default=60, gt=0)
+    token_bucket_capacity: int = Field(default=5, gt=0)
+    token_bucket_refill_rate: int = Field(default=1, gt=0)
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
