@@ -5,6 +5,7 @@ from app.redis_client import redis_client
 from app.config import settings
 from contextlib import asynccontextmanager
 from redis.exceptions import RedisError
+from app.middleware.rate_limit import RateLimitMiddleware
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -41,6 +42,14 @@ sliding_window_script = redis_client.register_script(sliding_script_source)
 token_bucket_path = Path(__file__).parent / "scripts" / "token_bucket.lua"
 token_bucket_source = token_bucket_path.read_text()
 token_bucket_script = redis_client.register_script(token_bucket_source)
+
+app.add_middleware(
+    RateLimitMiddleware,
+    redis_client=redis_client,
+    rate_limit_script=fixed_window_script,
+    limit=settings.req_limit,
+    window_seconds=settings.window_seconds,
+)
 
 @app.get("/")
 async def home():
@@ -201,3 +210,11 @@ async def check_token_bucket(client_id: str):
         },
         headers=rate_limit_headers,
     )
+
+
+@app.get("/api/v1/protected")
+async def protected_route():
+    return {
+        "message": "You have accessed a protected route!",
+        "status": "success",
+    }
