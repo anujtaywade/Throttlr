@@ -6,6 +6,8 @@ from app.config import settings
 from contextlib import asynccontextmanager
 from redis.exceptions import RedisError
 from app.middleware.rate_limit import RateLimitMiddleware
+from fastapi.responses import Response
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -162,7 +164,6 @@ async def check_sliding_rate_limit(client_id: str):
 
 
 
-
 @app.get("/api/v1/ratelimit/token-bucket/{client_id}")
 async def check_token_bucket(client_id: str):
     key = f"throttlr:token_bucket:{client_id}"
@@ -212,9 +213,18 @@ async def check_token_bucket(client_id: str):
     )
 
 
+
 @app.get("/api/v1/protected")
 async def protected_route():
     return {
         "message": "You have accessed a protected route!",
         "status": "success",
     }
+
+
+@app.get("/metrics")
+async def metrics():
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST,
+    )

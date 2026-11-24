@@ -1,6 +1,13 @@
 
 from fastapi.responses import JSONResponse
 from redis.exceptions import RedisError
+import time
+
+from app.metrics import (
+    REQUEST_COUNT,
+    REJECTED_REQUEST_COUNT,
+    REQUEST_LATENCY,
+)
 
 
 class RateLimitMiddleware:
@@ -26,9 +33,11 @@ class RateLimitMiddleware:
             return
 
         path = scope["path"]
+        start_time = time.perf_counter()
 
         # Exclude existing algorithm testing endpoints.
-        if path.startswith("/api/v1/ratelimit/"):
+        if (path.startswith("/api/v1/ratelimit/")
+            or path == "/metrics"):
             await self.app(scope, receive, send)
             return
 
@@ -66,6 +75,9 @@ class RateLimitMiddleware:
 
         # Reject requests that exceed the limit.
         if allowed == 0:
+            
+            REJECTED_REQUEST_COUNT.inc()
+
             response = JSONResponse(
                 status_code=429,
                 content={"detail": "Too many requests"},
@@ -84,9 +96,27 @@ class RateLimitMiddleware:
         }
 
         # Intercept the response before sending it to the client.
+        
+
+        # Intercept the response before sending it to the client.
         async def send_with_rate_limit_headers(message):
 
             if message["type"] == "http.response.start":
+
+                status_code = message["status"]
+
+                # Count the HTTP response.
+                REQUEST_COUNT.labels(
+                    method=scope["method"],
+                    status=str(status_code),
+                ).inc()
+
+                # Record request processing time.
+                duration = time.perf_counter() - start_time
+
+                REQUEST_LATENCY.labels(
+                    method=scope["method"],
+                ).observe(duration)
 
                 existing_headers = [
                     (name, value)
@@ -103,3 +133,4 @@ class RateLimitMiddleware:
 
         # Pass the wrapped send function to the application.
         await self.app(scope, receive, send_with_rate_limit_headers)
+

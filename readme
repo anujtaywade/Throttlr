@@ -149,6 +149,14 @@ The structure represents the intended architecture and will evolve as implementa
 
 ## 🚀 Getting Started
 
+### Testing queries in Terminal 
+
+for i in {1..6}; do
+  echo "Request $i:"
+  curl -i http://127.0.0.1:8000/api/v1/protected
+  echo
+done
+
 ### Prerequisites
 
 - Python 3.12 or later
